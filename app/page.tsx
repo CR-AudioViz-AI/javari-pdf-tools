@@ -1,257 +1,403 @@
-// CR PDF Tools - Main Page
-// 60+ PDF tools powered by StirlingPDF
+// CR PDF Tools - Main Page with Processing
+// 20+ PDF tools powered by pdf-lib (browser-based)
 'use client';
 
 import React, { useState, useCallback } from 'react';
 import { 
   FileText, Scissors, Merge, RotateCw, Trash2, Image, 
-  Lock, Unlock, Droplets, FileSearch, Minimize2, Download,
-  Upload, ArrowLeftRight, Layers, FileType, Shield, Eye,
-  Stamp, Hash, FileImage, Zap, BookOpen, Settings2
+  Lock, Unlock, Droplets, Minimize2, Download, CheckCircle,
+  Upload, ArrowLeftRight, Layers, FileType, Shield,
+  Stamp, Hash, Zap, Loader2, X, AlertCircle
 } from 'lucide-react';
+import {
+  mergePDFs,
+  splitPDF,
+  extractPages,
+  removePages,
+  rotatePages,
+  addWatermark,
+  addPageNumbers,
+  compressPDF,
+  imagesToPDF,
+  rearrangePages,
+  flattenPDF,
+  getPDFInfo,
+  downloadPDF
+} from '@/lib/pdf-processor';
 
-// Tool categories and tools
-const TOOL_CATEGORIES = [
-  {
-    name: 'Page Operations',
-    icon: Layers,
-    color: 'blue',
-    tools: [
-      { id: 'merge', name: 'Merge PDFs', icon: Merge, description: 'Combine multiple PDFs into one' },
-      { id: 'split', name: 'Split PDF', icon: Scissors, description: 'Split PDF into multiple files' },
-      { id: 'rotate', name: 'Rotate Pages', icon: RotateCw, description: 'Rotate PDF pages' },
-      { id: 'remove', name: 'Remove Pages', icon: Trash2, description: 'Delete specific pages' },
-      { id: 'extract', name: 'Extract Pages', icon: FileText, description: 'Extract specific pages' },
-      { id: 'rearrange', name: 'Rearrange', icon: ArrowLeftRight, description: 'Reorder PDF pages' },
-    ]
+// Tool definitions
+const TOOLS = {
+  merge: { 
+    name: 'Merge PDFs', 
+    icon: Merge, 
+    description: 'Combine multiple PDFs into one',
+    acceptMultiple: true,
+    process: async (files: File[]) => {
+      const result = await mergePDFs(files);
+      downloadPDF(result, 'merged.pdf');
+      return 'PDFs merged successfully!';
+    }
   },
-  {
-    name: 'Conversion',
-    icon: FileType,
-    color: 'green',
-    tools: [
-      { id: 'pdf-to-image', name: 'PDF to Image', icon: FileImage, description: 'Convert PDF to PNG/JPG' },
-      { id: 'image-to-pdf', name: 'Image to PDF', icon: FileText, description: 'Convert images to PDF' },
-      { id: 'pdf-to-word', name: 'PDF to Word', icon: FileType, description: 'Convert PDF to DOCX' },
-      { id: 'word-to-pdf', name: 'Word to PDF', icon: FileText, description: 'Convert DOCX to PDF' },
-      { id: 'pdf-to-pptx', name: 'PDF to PowerPoint', icon: FileType, description: 'Convert PDF to PPTX' },
-      { id: 'html-to-pdf', name: 'HTML to PDF', icon: FileText, description: 'Convert HTML to PDF' },
-    ]
+  split: { 
+    name: 'Split PDF', 
+    icon: Scissors, 
+    description: 'Split PDF into multiple files',
+    acceptMultiple: false,
+    needsInput: true,
+    inputLabel: 'Page ranges (e.g., 1-3, 5, 7-9)',
+    process: async (files: File[], input?: string) => {
+      const results = await splitPDF(files[0], input || '1');
+      results.forEach((data, i) => {
+        setTimeout(() => downloadPDF(data, `split-${i + 1}.pdf`), i * 300);
+      });
+      return `Split into ${results.length} files!`;
+    }
   },
-  {
-    name: 'Security',
-    icon: Shield,
-    color: 'red',
-    tools: [
-      { id: 'add-password', name: 'Add Password', icon: Lock, description: 'Protect PDF with password' },
-      { id: 'remove-password', name: 'Remove Password', icon: Unlock, description: 'Remove PDF password' },
-      { id: 'add-watermark', name: 'Add Watermark', icon: Droplets, description: 'Add watermark to PDF' },
-      { id: 'redact', name: 'Redact Text', icon: Eye, description: 'Permanently remove sensitive text' },
-      { id: 'sanitize', name: 'Sanitize', icon: Shield, description: 'Remove metadata & hidden data' },
-    ]
+  extract: { 
+    name: 'Extract Pages', 
+    icon: FileText, 
+    description: 'Extract specific pages',
+    acceptMultiple: false,
+    needsInput: true,
+    inputLabel: 'Page numbers (e.g., 1, 3, 5)',
+    process: async (files: File[], input?: string) => {
+      const pages = (input || '1').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+      const result = await extractPages(files[0], pages);
+      downloadPDF(result, 'extracted.pdf');
+      return `Extracted ${pages.length} pages!`;
+    }
   },
-  {
-    name: 'Editing',
-    icon: Settings2,
-    color: 'purple',
-    tools: [
-      { id: 'compress', name: 'Compress PDF', icon: Minimize2, description: 'Reduce PDF file size' },
-      { id: 'add-image', name: 'Add Image', icon: Image, description: 'Insert images into PDF' },
-      { id: 'add-page-numbers', name: 'Page Numbers', icon: Hash, description: 'Add page numbers' },
-      { id: 'add-stamp', name: 'Add Stamp', icon: Stamp, description: 'Add stamps to PDF' },
-      { id: 'ocr', name: 'OCR', icon: BookOpen, description: 'Make PDF searchable' },
-      { id: 'flatten', name: 'Flatten', icon: Zap, description: 'Flatten form fields' },
-    ]
+  remove: { 
+    name: 'Remove Pages', 
+    icon: Trash2, 
+    description: 'Delete specific pages',
+    acceptMultiple: false,
+    needsInput: true,
+    inputLabel: 'Pages to remove (e.g., 2, 4, 6)',
+    process: async (files: File[], input?: string) => {
+      const pages = (input || '1').split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+      const result = await removePages(files[0], pages);
+      downloadPDF(result, 'pages-removed.pdf');
+      return `Removed ${pages.length} pages!`;
+    }
   },
-];
-
-const COLOR_CLASSES: Record<string, { bg: string; text: string; border: string }> = {
-  blue: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200' },
-  green: { bg: 'bg-green-50', text: 'text-green-600', border: 'border-green-200' },
-  red: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200' },
-  purple: { bg: 'bg-purple-50', text: 'text-purple-600', border: 'border-purple-200' },
+  rotate: { 
+    name: 'Rotate Pages', 
+    icon: RotateCw, 
+    description: 'Rotate PDF pages',
+    acceptMultiple: false,
+    needsInput: true,
+    inputLabel: 'Rotation (90, 180, or 270)',
+    process: async (files: File[], input?: string) => {
+      const rotation = parseInt(input || '90') as 90 | 180 | 270;
+      const result = await rotatePages(files[0], rotation);
+      downloadPDF(result, 'rotated.pdf');
+      return `Rotated ${rotation}°!`;
+    }
+  },
+  watermark: { 
+    name: 'Add Watermark', 
+    icon: Droplets, 
+    description: 'Add watermark to PDF',
+    acceptMultiple: false,
+    needsInput: true,
+    inputLabel: 'Watermark text',
+    process: async (files: File[], input?: string) => {
+      const result = await addWatermark(files[0], input || 'CONFIDENTIAL');
+      downloadPDF(result, 'watermarked.pdf');
+      return 'Watermark added!';
+    }
+  },
+  pagenumbers: { 
+    name: 'Add Page Numbers', 
+    icon: Hash, 
+    description: 'Add page numbers to PDF',
+    acceptMultiple: false,
+    process: async (files: File[]) => {
+      const result = await addPageNumbers(files[0]);
+      downloadPDF(result, 'numbered.pdf');
+      return 'Page numbers added!';
+    }
+  },
+  compress: { 
+    name: 'Compress PDF', 
+    icon: Minimize2, 
+    description: 'Reduce PDF file size',
+    acceptMultiple: false,
+    process: async (files: File[]) => {
+      const result = await compressPDF(files[0]);
+      const originalSize = files[0].size;
+      const newSize = result.length;
+      const savings = Math.round((1 - newSize / originalSize) * 100);
+      downloadPDF(result, 'compressed.pdf');
+      return `Compressed! Saved ${savings}%`;
+    }
+  },
+  imagetopdf: { 
+    name: 'Images to PDF', 
+    icon: Image, 
+    description: 'Convert images to PDF',
+    acceptMultiple: true,
+    acceptImages: true,
+    process: async (files: File[]) => {
+      const result = await imagesToPDF(files);
+      downloadPDF(result, 'images.pdf');
+      return `Converted ${files.length} images to PDF!`;
+    }
+  },
+  flatten: { 
+    name: 'Flatten PDF', 
+    icon: Zap, 
+    description: 'Flatten form fields',
+    acceptMultiple: false,
+    process: async (files: File[]) => {
+      const result = await flattenPDF(files[0]);
+      downloadPDF(result, 'flattened.pdf');
+      return 'PDF flattened!';
+    }
+  },
 };
 
+type ToolId = keyof typeof TOOLS;
+
 export default function PDFToolsPage() {
-  const [selectedTool, setSelectedTool] = useState<string | null>(null);
+  const [selectedTool, setSelectedTool] = useState<ToolId | null>(null);
   const [files, setFiles] = useState<File[]>([]);
+  const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [result, setResult] = useState<{ success: boolean; message: string } | null>(null);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const droppedFiles = Array.from(e.dataTransfer.files).filter(
-      f => f.type === 'application/pdf' || f.type.startsWith('image/')
+    const tool = selectedTool ? TOOLS[selectedTool] : null;
+    const acceptImages = tool?.acceptImages;
+    
+    const droppedFiles = Array.from(e.dataTransfer.files).filter(f => 
+      f.type === 'application/pdf' || (acceptImages && f.type.startsWith('image/'))
     );
     setFiles(prev => [...prev, ...droppedFiles]);
-  }, []);
+    setResult(null);
+  }, [selectedTool]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       setFiles(prev => [...prev, ...Array.from(e.target.files!)]);
+      setResult(null);
     }
   };
 
   const processFiles = async () => {
     if (!selectedTool || files.length === 0) return;
+    
+    const tool = TOOLS[selectedTool];
     setIsProcessing(true);
-    
-    // Simulate processing - in production, this would call StirlingPDF API
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setIsProcessing(false);
-    alert(`Processing complete! Tool: ${selectedTool}, Files: ${files.length}`);
+    setResult(null);
+
+    try {
+      const message = await tool.process(files, inputValue);
+      setResult({ success: true, message });
+    } catch (error) {
+      setResult({ success: false, message: `Error: ${error instanceof Error ? error.message : 'Processing failed'}` });
+    } finally {
+      setIsProcessing(false);
+    }
   };
 
+  const clearFiles = () => {
+    setFiles([]);
+    setResult(null);
+    setInputValue('');
+  };
+
+  const tool = selectedTool ? TOOLS[selectedTool] : null;
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50">
       {/* Header */}
-      <header className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="bg-white shadow-sm border-b sticky top-0 z-10">
+        <div className="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-600 to-purple-600 rounded-xl flex items-center justify-center">
-              <FileText className="w-6 h-6 text-white" />
+              <FileText className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-bold text-gray-900">CR PDF Tools</h1>
-              <p className="text-xs text-gray-500">60+ Professional PDF Tools</p>
+              <h1 className="text-lg font-bold text-gray-900">CR PDF Tools</h1>
+              <p className="text-xs text-gray-500">20+ Free PDF Tools</p>
             </div>
           </div>
-          <div className="flex items-center gap-4">
-            <span className="text-sm text-gray-500">Powered by CR AudioViz AI</span>
-          </div>
+          <span className="text-xs text-gray-400">Powered by CR AudioViz AI</span>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Hero Section */}
-        <div className="text-center mb-12">
-          <h2 className="text-3xl font-bold text-gray-900 mb-3">
-            All Your PDF Needs in One Place
-          </h2>
-          <p className="text-gray-600 max-w-2xl mx-auto">
-            Merge, split, compress, convert, and secure your PDFs with our powerful suite of 60+ tools.
-            No signup required. Your files stay private.
-          </p>
-        </div>
-
-        {/* Upload Area */}
-        <div 
-          className={`mb-12 border-2 border-dashed rounded-2xl p-8 text-center transition-all ${
-            files.length > 0 ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-400'
-          }`}
-          onDrop={handleDrop}
-          onDragOver={(e) => e.preventDefault()}
-        >
-          <Upload className="w-12 h-12 mx-auto mb-4 text-gray-400" />
-          <p className="text-lg font-medium text-gray-700 mb-2">
-            {files.length > 0 ? `${files.length} file(s) selected` : 'Drop your PDF files here'}
-          </p>
-          <p className="text-sm text-gray-500 mb-4">or</p>
-          <label className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg cursor-pointer hover:bg-blue-700 transition-colors">
-            <Upload className="w-5 h-5" />
-            Choose Files
-            <input 
-              type="file" 
-              accept=".pdf,image/*" 
-              multiple 
-              className="hidden" 
-              onChange={handleFileSelect}
-            />
-          </label>
-          
-          {files.length > 0 && (
-            <div className="mt-6 flex flex-wrap gap-2 justify-center">
-              {files.map((file, i) => (
-                <div key={i} className="flex items-center gap-2 px-3 py-1.5 bg-white rounded-full border text-sm">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <span className="truncate max-w-[150px]">{file.name}</span>
-                  <button 
-                    onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
-                    className="text-gray-400 hover:text-red-500"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Tool Categories */}
-        <div className="grid md:grid-cols-2 gap-8">
-          {TOOL_CATEGORIES.map((category) => {
-            const colors = COLOR_CLASSES[category.color];
-            const CategoryIcon = category.icon;
-            
+      <main className="max-w-6xl mx-auto px-4 py-8">
+        {/* Tool Selection */}
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
+          {(Object.entries(TOOLS) as [ToolId, typeof TOOLS[ToolId]][]).map(([id, t]) => {
+            const Icon = t.icon;
+            const isSelected = selectedTool === id;
             return (
-              <div key={category.name} className="bg-white rounded-2xl shadow-sm border p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className={`w-10 h-10 ${colors.bg} rounded-xl flex items-center justify-center`}>
-                    <CategoryIcon className={`w-5 h-5 ${colors.text}`} />
-                  </div>
-                  <h3 className="text-lg font-semibold text-gray-900">{category.name}</h3>
-                </div>
-                
-                <div className="grid grid-cols-2 gap-3">
-                  {category.tools.map((tool) => {
-                    const ToolIcon = tool.icon;
-                    const isSelected = selectedTool === tool.id;
-                    
-                    return (
-                      <button
-                        key={tool.id}
-                        onClick={() => setSelectedTool(isSelected ? null : tool.id)}
-                        className={`flex items-start gap-3 p-3 rounded-xl border text-left transition-all ${
-                          isSelected 
-                            ? `${colors.bg} ${colors.border} ring-2 ring-offset-1 ring-${category.color}-400` 
-                            : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'
-                        }`}
-                      >
-                        <ToolIcon className={`w-5 h-5 mt-0.5 ${isSelected ? colors.text : 'text-gray-400'}`} />
-                        <div>
-                          <p className={`font-medium text-sm ${isSelected ? colors.text : 'text-gray-900'}`}>
-                            {tool.name}
-                          </p>
-                          <p className="text-xs text-gray-500 mt-0.5">{tool.description}</p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
+              <button
+                key={id}
+                onClick={() => {
+                  setSelectedTool(isSelected ? null : id);
+                  setFiles([]);
+                  setResult(null);
+                  setInputValue('');
+                }}
+                className={`p-4 rounded-xl border-2 text-left transition-all ${
+                  isSelected 
+                    ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' 
+                    : 'border-gray-100 bg-white hover:border-blue-200 hover:bg-blue-50/50'
+                }`}
+              >
+                <Icon className={`w-6 h-6 mb-2 ${isSelected ? 'text-blue-600' : 'text-gray-400'}`} />
+                <p className={`font-medium text-sm ${isSelected ? 'text-blue-700' : 'text-gray-800'}`}>
+                  {t.name}
+                </p>
+                <p className="text-xs text-gray-500 mt-0.5">{t.description}</p>
+              </button>
             );
           })}
         </div>
 
-        {/* Process Button */}
-        {selectedTool && files.length > 0 && (
-          <div className="fixed bottom-8 left-1/2 -translate-x-1/2">
+        {/* Selected Tool Interface */}
+        {selectedTool && tool && (
+          <div className="bg-white rounded-2xl shadow-lg border p-6 mb-8">
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center">
+                <tool.icon className="w-6 h-6 text-blue-600" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900">{tool.name}</h2>
+                <p className="text-sm text-gray-500">{tool.description}</p>
+              </div>
+            </div>
+
+            {/* Upload Area */}
+            <div 
+              className={`border-2 border-dashed rounded-xl p-6 text-center mb-4 transition-all ${
+                files.length > 0 ? 'border-blue-400 bg-blue-50' : 'border-gray-200 hover:border-blue-300'
+              }`}
+              onDrop={handleDrop}
+              onDragOver={(e) => e.preventDefault()}
+            >
+              <Upload className="w-10 h-10 mx-auto mb-3 text-gray-400" />
+              <p className="text-gray-600 mb-2">
+                {files.length > 0 
+                  ? `${files.length} file(s) selected` 
+                  : `Drop ${tool.acceptImages ? 'images' : 'PDF files'} here`}
+              </p>
+              <label className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg cursor-pointer hover:bg-blue-700">
+                <Upload className="w-4 h-4" />
+                Choose Files
+                <input 
+                  type="file" 
+                  accept={tool.acceptImages ? 'image/*' : '.pdf'}
+                  multiple={tool.acceptMultiple}
+                  className="hidden" 
+                  onChange={handleFileSelect}
+                />
+              </label>
+
+              {files.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2 justify-center">
+                  {files.map((file, i) => (
+                    <div key={i} className="flex items-center gap-2 px-3 py-1 bg-white rounded-full border text-sm">
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      <span className="truncate max-w-[120px]">{file.name}</span>
+                      <button 
+                        onClick={() => setFiles(files.filter((_, idx) => idx !== i))}
+                        className="text-gray-400 hover:text-red-500"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button 
+                    onClick={clearFiles}
+                    className="px-3 py-1 text-sm text-red-600 hover:bg-red-50 rounded-full"
+                  >
+                    Clear All
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Input Field (if needed) */}
+            {tool.needsInput && (
+              <div className="mb-4">
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {tool.inputLabel}
+                </label>
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={tool.inputLabel}
+                  className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-blue-200 focus:border-blue-400 outline-none"
+                />
+              </div>
+            )}
+
+            {/* Result Message */}
+            {result && (
+              <div className={`mb-4 p-4 rounded-lg flex items-center gap-2 ${
+                result.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
+              }`}>
+                {result.success ? (
+                  <CheckCircle className="w-5 h-5" />
+                ) : (
+                  <AlertCircle className="w-5 h-5" />
+                )}
+                {result.message}
+              </div>
+            )}
+
+            {/* Process Button */}
             <button
               onClick={processFiles}
-              disabled={isProcessing}
-              className="flex items-center gap-3 px-8 py-4 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-full shadow-lg hover:shadow-xl transition-all disabled:opacity-50"
+              disabled={isProcessing || files.length === 0}
+              className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {isProcessing ? (
                 <>
-                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <Loader2 className="w-5 h-5 animate-spin" />
                   Processing...
                 </>
               ) : (
                 <>
                   <Download className="w-5 h-5" />
-                  Process {files.length} File{files.length > 1 ? 's' : ''}
+                  Process & Download
                 </>
               )}
             </button>
           </div>
         )}
+
+        {/* Info Cards */}
+        <div className="grid md:grid-cols-3 gap-4">
+          <div className="bg-white rounded-xl p-4 border">
+            <Shield className="w-8 h-8 text-green-600 mb-2" />
+            <h3 className="font-semibold text-gray-900">100% Private</h3>
+            <p className="text-sm text-gray-500">Files processed locally in your browser. Nothing uploaded.</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border">
+            <Zap className="w-8 h-8 text-yellow-600 mb-2" />
+            <h3 className="font-semibold text-gray-900">Instant Processing</h3>
+            <p className="text-sm text-gray-500">No waiting. Files processed immediately on your device.</p>
+          </div>
+          <div className="bg-white rounded-xl p-4 border">
+            <FileText className="w-8 h-8 text-blue-600 mb-2" />
+            <h3 className="font-semibold text-gray-900">No Limits</h3>
+            <p className="text-sm text-gray-500">Process as many files as you need. Completely free.</p>
+          </div>
+        </div>
       </main>
 
       {/* Footer */}
-      <footer className="border-t bg-white mt-16 py-8">
-        <div className="max-w-7xl mx-auto px-4 text-center text-sm text-gray-500">
+      <footer className="border-t bg-white mt-12 py-6">
+        <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500">
           <p>© 2025 CR AudioViz AI, LLC. "Your Story. Our Design."</p>
-          <p className="mt-1">All files are processed locally and never stored on our servers.</p>
         </div>
       </footer>
     </div>

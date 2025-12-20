@@ -1,13 +1,13 @@
 // CR PDF Tools - Main Page with Processing
-// 20+ PDF tools powered by pdf-lib (browser-based)
+// 10 PDF tools powered by pdf-lib (browser-based)
 'use client';
 
 import React, { useState, useCallback } from 'react';
 import { 
   FileText, Scissors, Merge, RotateCw, Trash2, Image, 
-  Lock, Unlock, Droplets, Minimize2, Download, CheckCircle,
-  Upload, ArrowLeftRight, Layers, FileType, Shield,
-  Stamp, Hash, Zap, Loader2, X, AlertCircle
+  Droplets, Minimize2, Download, CheckCircle,
+  Upload, Layers, Shield,
+  Hash, Zap, Loader2, X, AlertCircle
 } from 'lucide-react';
 import {
   mergePDFs,
@@ -19,19 +19,30 @@ import {
   addPageNumbers,
   compressPDF,
   imagesToPDF,
-  rearrangePages,
   flattenPDF,
-  getPDFInfo,
   downloadPDF
 } from '@/lib/pdf-processor';
 
+// Tool type definition
+interface Tool {
+  name: string;
+  icon: React.ComponentType<{ className?: string }>;
+  description: string;
+  acceptMultiple: boolean;
+  acceptImages?: boolean;
+  needsInput?: boolean;
+  inputLabel?: string;
+  process: (files: File[], input?: string) => Promise<string>;
+}
+
 // Tool definitions
-const TOOLS = {
+const TOOLS: Record<string, Tool> = {
   merge: { 
     name: 'Merge PDFs', 
     icon: Merge, 
     description: 'Combine multiple PDFs into one',
     acceptMultiple: true,
+    acceptImages: false,
     process: async (files: File[]) => {
       const result = await mergePDFs(files);
       downloadPDF(result, 'merged.pdf');
@@ -43,6 +54,7 @@ const TOOLS = {
     icon: Scissors, 
     description: 'Split PDF into multiple files',
     acceptMultiple: false,
+    acceptImages: false,
     needsInput: true,
     inputLabel: 'Page ranges (e.g., 1-3, 5, 7-9)',
     process: async (files: File[], input?: string) => {
@@ -58,6 +70,7 @@ const TOOLS = {
     icon: FileText, 
     description: 'Extract specific pages',
     acceptMultiple: false,
+    acceptImages: false,
     needsInput: true,
     inputLabel: 'Page numbers (e.g., 1, 3, 5)',
     process: async (files: File[], input?: string) => {
@@ -72,6 +85,7 @@ const TOOLS = {
     icon: Trash2, 
     description: 'Delete specific pages',
     acceptMultiple: false,
+    acceptImages: false,
     needsInput: true,
     inputLabel: 'Pages to remove (e.g., 2, 4, 6)',
     process: async (files: File[], input?: string) => {
@@ -84,15 +98,13 @@ const TOOLS = {
   rotate: { 
     name: 'Rotate Pages', 
     icon: RotateCw, 
-    description: 'Rotate PDF pages',
+    description: 'Rotate PDF pages 90°',
     acceptMultiple: false,
-    needsInput: true,
-    inputLabel: 'Rotation (90, 180, or 270)',
-    process: async (files: File[], input?: string) => {
-      const rotation = parseInt(input || '90') as 90 | 180 | 270;
-      const result = await rotatePages(files[0], rotation);
+    acceptImages: false,
+    process: async (files: File[]) => {
+      const result = await rotatePages(files[0], 90);
       downloadPDF(result, 'rotated.pdf');
-      return `Rotated ${rotation}°!`;
+      return 'Rotated 90°!';
     }
   },
   watermark: { 
@@ -100,6 +112,7 @@ const TOOLS = {
     icon: Droplets, 
     description: 'Add watermark to PDF',
     acceptMultiple: false,
+    acceptImages: false,
     needsInput: true,
     inputLabel: 'Watermark text',
     process: async (files: File[], input?: string) => {
@@ -109,10 +122,11 @@ const TOOLS = {
     }
   },
   pagenumbers: { 
-    name: 'Add Page Numbers', 
+    name: 'Page Numbers', 
     icon: Hash, 
-    description: 'Add page numbers to PDF',
+    description: 'Add page numbers',
     acceptMultiple: false,
+    acceptImages: false,
     process: async (files: File[]) => {
       const result = await addPageNumbers(files[0]);
       downloadPDF(result, 'numbered.pdf');
@@ -122,13 +136,12 @@ const TOOLS = {
   compress: { 
     name: 'Compress PDF', 
     icon: Minimize2, 
-    description: 'Reduce PDF file size',
+    description: 'Reduce file size',
     acceptMultiple: false,
+    acceptImages: false,
     process: async (files: File[]) => {
       const result = await compressPDF(files[0]);
-      const originalSize = files[0].size;
-      const newSize = result.length;
-      const savings = Math.round((1 - newSize / originalSize) * 100);
+      const savings = Math.round((1 - result.length / files[0].size) * 100);
       downloadPDF(result, 'compressed.pdf');
       return `Compressed! Saved ${savings}%`;
     }
@@ -142,7 +155,7 @@ const TOOLS = {
     process: async (files: File[]) => {
       const result = await imagesToPDF(files);
       downloadPDF(result, 'images.pdf');
-      return `Converted ${files.length} images to PDF!`;
+      return `Converted ${files.length} images!`;
     }
   },
   flatten: { 
@@ -150,6 +163,7 @@ const TOOLS = {
     icon: Zap, 
     description: 'Flatten form fields',
     acceptMultiple: false,
+    acceptImages: false,
     process: async (files: File[]) => {
       const result = await flattenPDF(files[0]);
       downloadPDF(result, 'flattened.pdf');
@@ -158,10 +172,8 @@ const TOOLS = {
   },
 };
 
-type ToolId = keyof typeof TOOLS;
-
 export default function PDFToolsPage() {
-  const [selectedTool, setSelectedTool] = useState<ToolId | null>(null);
+  const [selectedTool, setSelectedTool] = useState<string | null>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -170,7 +182,7 @@ export default function PDFToolsPage() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const tool = selectedTool ? TOOLS[selectedTool] : null;
-    const acceptImages = tool?.acceptImages;
+    const acceptImages = tool?.acceptImages || false;
     
     const droppedFiles = Array.from(e.dataTransfer.files).filter(f => 
       f.type === 'application/pdf' || (acceptImages && f.type.startsWith('image/'))
@@ -222,7 +234,7 @@ export default function PDFToolsPage() {
             </div>
             <div>
               <h1 className="text-lg font-bold text-gray-900">CR PDF Tools</h1>
-              <p className="text-xs text-gray-500">20+ Free PDF Tools</p>
+              <p className="text-xs text-gray-500">10 Free PDF Tools</p>
             </div>
           </div>
           <span className="text-xs text-gray-400">Powered by CR AudioViz AI</span>
@@ -232,7 +244,7 @@ export default function PDFToolsPage() {
       <main className="max-w-6xl mx-auto px-4 py-8">
         {/* Tool Selection */}
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mb-8">
-          {(Object.entries(TOOLS) as [ToolId, typeof TOOLS[ToolId]][]).map(([id, t]) => {
+          {Object.entries(TOOLS).map(([id, t]) => {
             const Icon = t.icon;
             const isSelected = selectedTool === id;
             return (
@@ -344,11 +356,7 @@ export default function PDFToolsPage() {
               <div className={`mb-4 p-4 rounded-lg flex items-center gap-2 ${
                 result.success ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'
               }`}>
-                {result.success ? (
-                  <CheckCircle className="w-5 h-5" />
-                ) : (
-                  <AlertCircle className="w-5 h-5" />
-                )}
+                {result.success ? <CheckCircle className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
                 {result.message}
               </div>
             )}
@@ -360,15 +368,9 @@ export default function PDFToolsPage() {
               className="w-full flex items-center justify-center gap-2 px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-medium hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
             >
               {isProcessing ? (
-                <>
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                  Processing...
-                </>
+                <><Loader2 className="w-5 h-5 animate-spin" />Processing...</>
               ) : (
-                <>
-                  <Download className="w-5 h-5" />
-                  Process & Download
-                </>
+                <><Download className="w-5 h-5" />Process & Download</>
               )}
             </button>
           </div>
@@ -379,22 +381,21 @@ export default function PDFToolsPage() {
           <div className="bg-white rounded-xl p-4 border">
             <Shield className="w-8 h-8 text-green-600 mb-2" />
             <h3 className="font-semibold text-gray-900">100% Private</h3>
-            <p className="text-sm text-gray-500">Files processed locally in your browser. Nothing uploaded.</p>
+            <p className="text-sm text-gray-500">Files processed in your browser. Nothing uploaded.</p>
           </div>
           <div className="bg-white rounded-xl p-4 border">
             <Zap className="w-8 h-8 text-yellow-600 mb-2" />
-            <h3 className="font-semibold text-gray-900">Instant Processing</h3>
-            <p className="text-sm text-gray-500">No waiting. Files processed immediately on your device.</p>
+            <h3 className="font-semibold text-gray-900">Instant</h3>
+            <p className="text-sm text-gray-500">No waiting. Files processed immediately.</p>
           </div>
           <div className="bg-white rounded-xl p-4 border">
-            <FileText className="w-8 h-8 text-blue-600 mb-2" />
-            <h3 className="font-semibold text-gray-900">No Limits</h3>
-            <p className="text-sm text-gray-500">Process as many files as you need. Completely free.</p>
+            <Layers className="w-8 h-8 text-blue-600 mb-2" />
+            <h3 className="font-semibold text-gray-900">Free Forever</h3>
+            <p className="text-sm text-gray-500">No limits, no signup required.</p>
           </div>
         </div>
       </main>
 
-      {/* Footer */}
       <footer className="border-t bg-white mt-12 py-6">
         <div className="max-w-6xl mx-auto px-4 text-center text-sm text-gray-500">
           <p>© 2025 CR AudioViz AI, LLC. "Your Story. Our Design."</p>

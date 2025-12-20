@@ -1,0 +1,28 @@
+version: '3.8'
+
+services:
+  cr-pdf-tools:
+    image: stirlingtools/stirling-pdf:latest
+    container_name: cr-pdf-tools
+    ports:
+      - '8080:8080'
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - SECURITY_ENABLELOGIN=false
+      - SYSTEM_DEFAULTLOCALE=en_US
+      - UI_APPNAME=CR PDF Tools
+      - UI_HOMEDESCRIPTION=Professional PDF tools powered by CR AudioViz AI
+      - UI_APPNAMENAVBAR=CR PDF Tools
+      - METRICS_ENABLED=true
+    volumes:
+      - ./trainingData:/usr/share/tessdata
+      - ./extraConfigs:/configs
+      - ./customFiles:/customFiles
+      - ./logs:/logs
+      - ./pipeline:/pipeline
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/info/status"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
